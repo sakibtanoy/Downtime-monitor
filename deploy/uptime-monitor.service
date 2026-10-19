@@ -1,0 +1,18 @@
+[Unit]
+Description=Uptime Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/uptime-monitor
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+User=uptime
+Environment=NODE_ENV=production
+# Give the app time to flush its data on stop
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

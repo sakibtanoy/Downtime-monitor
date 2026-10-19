@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime and persistent database/auth storage
+data/*
+!data/.gitkeep
+
+# Logs and temp files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
