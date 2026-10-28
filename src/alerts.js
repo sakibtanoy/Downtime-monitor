@@ -18,7 +18,8 @@ function fmtDuration(ms) {
 }
 
 const THEME = {
-  down: { icon: '🔴', label: 'DOWN', color: '#d92d20' },
+  down: { icon: '🔴', label: 'SERVER DOWN', color: '#d92d20' },
+  error: { icon: '⚠️', label: 'CRITICAL ERROR', color: '#e67e22' },
   up: { icon: '🟢', label: 'RECOVERED', color: '#12b76a' },
   reminder: { icon: '🔴', label: 'STILL DOWN', color: '#d92d20' },
   ssl: { icon: '🟠', label: 'SSL EXPIRING', color: '#f79009' },
@@ -26,19 +27,23 @@ const THEME = {
 };
 
 function build(kind, site, info) {
-  const t = THEME[kind];
+  const t = THEME[kind] || THEME.down;
   const lines = [`${t.icon} *${t.label}: ${site.name}*`, site.url];
   const rows = [['Site', site.name], ['Target', site.url]];
   let subject = `${t.icon} ${t.label}: ${site.name}`;
-  if (kind === 'down' || kind === 'reminder') {
+  if (kind === 'down' || kind === 'error' || kind === 'reminder') {
+    const errorTypeLabel = kind === 'error' ? 'Application / Critical Error' : 'Server unreachable / offline';
     lines.push(`Reason: ${info.error || 'No response'}`);
+    lines.push(`Status: ${errorTypeLabel}`);
     rows.push(['Reason', info.error || 'No response']);
+    rows.push(['Status', errorTypeLabel]);
     if (kind === 'reminder') { lines.push(`Down for: ${fmtDuration(info.downFor)}`); rows.push(['Down for', fmtDuration(info.downFor)]); }
     else { lines.push(`Since: ${fmtTime(info.since)}`); rows.push(['Since', fmtTime(info.since)]); }
   } else if (kind === 'up') {
+    const wasError = info.prevStatus === 'error';
     lines.push(`Back online after ${fmtDuration(info.downFor)}`);
     rows.push(['Downtime', fmtDuration(info.downFor)], ['Recovered at', fmtTime(Date.now())]);
-    subject = `${t.icon} UP: ${site.name} is back (down ${fmtDuration(info.downFor)})`;
+    subject = `${t.icon} UP: ${site.name} is back (${wasError ? 'error resolved' : 'down ' + fmtDuration(info.downFor)})`;
   } else if (kind === 'ssl') {
     lines.push(`SSL certificate expires in ${info.days} day(s)`);
     rows.push(['Certificate expires in', `${info.days} day(s)`]);

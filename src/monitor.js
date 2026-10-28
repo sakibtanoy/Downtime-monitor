@@ -29,23 +29,25 @@ async function checkSite(site) {
 async function applyResult(site, r) {
   const now = Date.now();
   const st = site.state;
-  store.addCheck(site.id, now, r.ok, r.ms);
+  store.addCheck(site.id, now, r.ok, r.ms, r.errorType);
   st.lastCheck = now;
   st.lastMs = r.ms;
   st.lastStatusCode = r.statusCode ?? null;
   st.lastError = r.ok ? null : r.error;
+  st.lastErrorType = r.ok ? null : (r.errorType || 'down');
   if (r.sslDaysLeft != null) st.sslDaysLeft = r.sslDaysLeft;
 
   if (r.ok) {
     st.failures = 0;
     st.nextCheckAt = now + intervalMs(site);
-    if (st.status === 'down') {
+    if (st.status === 'down' || st.status === 'error') {
       const inc = store.db.incidents.find((i) => i.id === st.incidentId);
       const downFor = now - (inc ? inc.startedAt : st.lastChange);
       if (inc) inc.endedAt = now;
+      const prevStatus = st.status;
       st.status = 'up'; st.lastChange = now; st.incidentId = null; st.lastAlertAt = null;
       store.markDb();
-      await notify('up', site, { downFor });
+      await notify('up', site, { downFor, prevStatus });
     } else {
       if (st.status !== 'up') { st.status = 'up'; st.lastChange = now; }
       store.markDb();
@@ -61,23 +63,27 @@ async function applyResult(site, r) {
 
   // Failure
   st.failures += 1;
-  if (st.status === 'down') {
+  const targetStatus = r.errorType === 'error' ? 'error' : 'down';
+  if (st.status === 'down' || st.status === 'error') {
+    if (st.status !== targetStatus) {
+      st.status = targetStatus;
+    }
     st.nextCheckAt = now + intervalMs(site);
     const rem = config.downReminderMinutes * 60_000;
     if (rem && now - (st.lastAlertAt || 0) >= rem) {
       st.lastAlertAt = now;
       const inc = store.db.incidents.find((i) => i.id === st.incidentId);
       store.markDb();
-      await notify('reminder', site, { error: r.error, downFor: now - (inc ? inc.startedAt : now) });
+      await notify('reminder', site, { error: r.error, errorType: targetStatus, downFor: now - (inc ? inc.startedAt : now) });
     }
   } else if (st.failures >= config.failureThreshold) {
     const startedAt = now;
-    const inc = { id: store.newId(), siteId: site.id, siteName: site.name, startedAt, endedAt: null, error: r.error };
+    const inc = { id: store.newId(), siteId: site.id, siteName: site.name, startedAt, endedAt: null, error: r.error, type: targetStatus };
     store.db.incidents.push(inc);
-    st.status = 'down'; st.lastChange = now; st.incidentId = inc.id; st.lastAlertAt = now;
+    st.status = targetStatus; st.lastChange = now; st.incidentId = inc.id; st.lastAlertAt = now;
     st.nextCheckAt = now + intervalMs(site);
     store.markDb();
-    await notify('down', site, { error: r.error, since: startedAt });
+    await notify(targetStatus, site, { error: r.error, errorType: targetStatus, since: startedAt });
   } else {
     // Not confirmed yet - retry soon instead of waiting a whole interval
     st.nextCheckAt = now + CONFIRM_RETRY_MS;

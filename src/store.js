@@ -44,12 +44,13 @@ const newId = () => crypto.randomBytes(5).toString('hex');
 
 function newState() {
   return {
-    status: 'unknown', // unknown | up | down
+    status: 'unknown', // unknown | up | down | error
     failures: 0,
     lastCheck: null,
     nextCheckAt: 0,
     lastChange: null,
     lastError: null,
+    lastErrorType: null,
     lastMs: null,
     lastStatusCode: null,
     sslDaysLeft: null,
@@ -59,9 +60,10 @@ function newState() {
   };
 }
 
-function addCheck(siteId, ts, ok, ms) {
+function addCheck(siteId, ts, ok, ms, errorType) {
   const arr = (checks[siteId] = checks[siteId] || []);
-  arr.push([ts, ok ? 1 : 0, ms == null ? null : Math.round(ms)]);
+  const val = ok ? 1 : (errorType === 'error' ? 2 : 0);
+  arr.push([ts, val, ms == null ? null : Math.round(ms)]);
   markChecks();
 }
 
@@ -87,7 +89,8 @@ function uptimePercent(siteId, windowMs) {
   let total = 0, okc = 0;
   for (let i = arr.length - 1; i >= 0; i--) {
     if (arr[i][0] < since) break;
-    total++; okc += arr[i][1];
+    total++;
+    if (arr[i][1] === 1) okc++;
   }
   return total ? (okc / total) * 100 : null;
 }

@@ -69,6 +69,7 @@ function fakeSmtp() {
     if (req.url === '/wp-db-error') { res.writeHead(200); return res.end('<h1>Error establishing a database connection</h1>'); }
     if (req.url === '/php-fatal') { res.writeHead(200); return res.end('<b>Fatal error</b>: Uncaught Error: Call to undefined function wp() in /var/www/index.php:12'); }
     if (req.url === '/wp-maintenance') { res.writeHead(200); return res.end('Briefly unavailable for scheduled maintenance. Check back in a minute.'); }
+    if (req.url === '/spa') { res.writeHead(200); return res.end('<!doctype html><html><head><title>Admin</title><script src="/assets/app.js"></script></head><body><div id="root"></div></body></html>'); }
     res.writeHead(200); res.end('<html>Welcome to my shop</html>');
   });
   await new Promise((r) => target.listen(0, '127.0.0.1', r));
@@ -153,6 +154,12 @@ function fakeSmtp() {
   assert.ok(!phpErr.ok && /PHP Fatal error/i.test(phpErr.error)); ok('PHP Fatal error detected');
   const maintErr = await runCheck({ type: 'http', url: base + '/wp-maintenance' }, d);
   assert.ok(!maintErr.ok && /WordPress maintenance mode/i.test(maintErr.error)); ok('WordPress maintenance mode detected');
+
+  const spaCheck = await runCheck({ type: 'http', url: base + '/spa' }, d);
+  assert.ok(spaCheck.ok); ok('SPA with scripts and empty body is healthy (not blank)');
+
+  assert.strictEqual(wpCrit.errorType, 'error'); ok('WordPress critical error sets errorType: error');
+  assert.strictEqual(refused.errorType, 'down'); ok('connection refused sets errorType: down');
 
   // --- bulk, test endpoints, reports
   const bulk = await call('POST', '/api/sites/bulk', { text: `A | ${base}/a\n${base}/\nbad line ::` });

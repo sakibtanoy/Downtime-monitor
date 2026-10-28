@@ -110,23 +110,29 @@ function detectBlankPage(body, status) {
     return 'Blank page: server returned whitespace only (White Screen of Death)';
   }
 
-  // Detect empty HTML skeleton with no visible content, text, or assets
-  if (body.length < 1200) {
-    // If the body tag exists and is empty
-    const bodyMatch = body.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const contentToCheck = bodyMatch ? bodyMatch[1] : body;
-    const hasAssets = /<(script|img|svg|iframe|link|video|audio|canvas|object|embed|form|input)\b/i.test(contentToCheck);
-    if (!hasAssets) {
-      const visibleText = contentToCheck
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, '')
-        .replace(/&(?:nbsp|#160);/gi, ' ')
-        .trim();
-      if (visibleText.length === 0) {
-        return 'Blank page: body has no content (White Screen of Death)';
-      }
-    }
+  // If the document contains script tags, stylesheet links, images, iframes, SVG, or interactive tags
+  // ANYWHERE in head or body, it is an application / SPA / real page, NOT a blank page!
+  const hasAppAssets = /<(script|link|img|svg|iframe|video|audio|canvas|object|embed|form|input)\b/i.test(body);
+  if (hasAppAssets) return null;
+
+  // Check if there is any visible title
+  const titleMatch = body.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const titleText = titleMatch ? titleMatch[1].trim() : '';
+  if (titleText && titleText.length > 2 && titleText.toLowerCase() !== 'untitled') {
+    return null;
+  }
+
+  // Strip all comments, styles, tags, and whitespace
+  const stripped = body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(?:nbsp|#160);/gi, ' ')
+    .trim();
+
+  // If no assets, no title, and no text content
+  if (stripped.length === 0) {
+    return 'Blank page: empty HTML skeleton with no content (White Screen of Death)';
   }
 
   return null;
@@ -200,22 +206,29 @@ async function checkHttp(site, defaults) {
     const okStatus = statusMatcher(site.expectedStatus)(r.status);
     let ok = okStatus;
     let error = null;
+    let errorType = null;
 
     if (!okStatus) {
       error = `HTTP ${r.status}${r.status >= 500 ? ' (server error)' : ''}`;
+      errorType = 'down';
       if (site.checkErrors !== false && r.body) {
         const crit = detectCriticalError(r.body);
-        if (crit) error = `HTTP ${r.status}: ${crit}`;
+        if (crit) {
+          error = `HTTP ${r.status}: ${crit}`;
+          errorType = 'error';
+        }
       }
     } else {
       if (site.keyword && !r.body.includes(site.keyword)) {
         ok = false;
         error = `Keyword "${site.keyword}" not found on page`;
+        errorType = 'error';
       } else if (site.checkErrors !== false && !site.expectedStatus) {
         const crit = detectCriticalError(r.body);
         if (crit) {
           ok = false;
           error = crit;
+          errorType = 'error';
         }
       }
 
@@ -224,29 +237,30 @@ async function checkHttp(site, defaults) {
         if (blank) {
           ok = false;
           error = blank;
+          errorType = 'error';
         }
       }
     }
 
-    return { ok, ms: r.ms, statusCode: r.status, error, sslDaysLeft: r.sslDaysLeft };
+    return { ok, ms: r.ms, statusCode: r.status, error, errorType: ok ? null : (errorType || 'down'), sslDaysLeft: r.sslDaysLeft };
   } catch (e) {
-    return { ok: false, ms: Date.now() - t0, statusCode: null, error: e.code === 'ETIMEDOUT_APP' ? e.message : friendlyError(e), sslDaysLeft: null };
+    return { ok: false, ms: Date.now() - t0, statusCode: null, error: e.code === 'ETIMEDOUT_APP' ? e.message : friendlyError(e), errorType: 'down', sslDaysLeft: null };
   }
 }
 
 function checkTcp(site, defaults) {
   const timeoutMs = site.timeoutMs || defaults.requestTimeoutMs;
   const m = String(site.url).replace(/^tcp:\/\//, '').match(/^(.+):(\d{1,5})$/);
-  if (!m) return Promise.resolve({ ok: false, ms: 0, error: 'Invalid TCP target (use host:port)' });
+  if (!m) return Promise.resolve({ ok: false, ms: 0, error: 'Invalid TCP target (use host:port)', errorType: 'down' });
   const [, host, port] = m;
   return new Promise((resolve) => {
     const t0 = Date.now();
     const sock = net.connect({ host, port: Number(port) });
     let settled = false;
     const finish = (r) => { if (settled) return; settled = true; sock.destroy(); resolve({ statusCode: null, sslDaysLeft: null, ...r, ms: Date.now() - t0 }); };
-    sock.setTimeout(timeoutMs, () => finish({ ok: false, error: `Timed out after ${timeoutMs / 1000}s` }));
-    sock.on('connect', () => finish({ ok: true, error: null }));
-    sock.on('error', (e) => finish({ ok: false, error: friendlyError(e) }));
+    sock.setTimeout(timeoutMs, () => finish({ ok: false, error: `Timed out after ${timeoutMs / 1000}s`, errorType: 'down' }));
+    sock.on('connect', () => finish({ ok: true, error: null, errorType: null }));
+    sock.on('error', (e) => finish({ ok: false, error: friendlyError(e), errorType: 'down' }));
   });
 }
 

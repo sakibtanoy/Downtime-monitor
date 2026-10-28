@@ -186,6 +186,7 @@
   }
   .stat-icon.up { background: color-mix(in srgb, var(--up) 15%, transparent); color: var(--up); }
   .stat-icon.down { background: color-mix(in srgb, var(--down) 15%, transparent); color: var(--down); }
+  .stat-icon.error { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
   .stat-icon.pause { background: color-mix(in srgb, var(--pause) 18%, transparent); color: var(--pause); }
   .stat-icon.total { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
 
@@ -258,11 +259,16 @@
     background: var(--down);
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--down) 25%, transparent);
   }
+  .dot.error {
+    background: var(--warn);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 25%, transparent);
+  }
   .dot.unknown { background: var(--warn); }
   .err { color: var(--down); font-size: 12px; }
   .bars { display: flex; gap: 1.2px; height: 18px; align-items: stretch; }
   .bars i { width: 3px; background: var(--up); border-radius: 1px; }
   .bars i.f { background: var(--down); }
+  .bars i.crit { background: var(--warn); }
   .bars i.e { background: var(--line); }
   .actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; flex-wrap: nowrap; }
   .muted { color: var(--muted); }
@@ -597,6 +603,7 @@ let sites = [], editingId = null;
 const I = {
   check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
   alert: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  alertTriangle: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
   pause: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
   play: `<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 19 12 6 20 6 4"/></svg>`,
   refresh: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`,
@@ -657,6 +664,7 @@ const when = (ts) => new Date(ts).toLocaleString();
 
 function renderSummary() {
   const up = sites.filter((s) => s.enabled && s.state.status === 'up').length;
+  const error = sites.filter((s) => s.enabled && s.state.status === 'error').length;
   const down = sites.filter((s) => s.enabled && s.state.status === 'down').length;
   const paused = sites.filter((s) => !s.enabled).length;
   $('#summary').innerHTML = `
@@ -665,7 +673,11 @@ function renderSummary() {
       <b style="color:var(--up)">${up}</b>
     </div>
     <div class="stat">
-      <div class="stat-header"><span>Down</span><div class="stat-icon down">${I.alert}</div></div>
+      <div class="stat-header"><span>Critical Error</span><div class="stat-icon error">${I.alertTriangle}</div></div>
+      <b style="color:${error ? 'var(--warn)' : 'inherit'}">${error}</b>
+    </div>
+    <div class="stat">
+      <div class="stat-header"><span>Server Down</span><div class="stat-icon down">${I.alert}</div></div>
       <b style="color:${down ? 'var(--down)' : 'inherit'}">${down}</b>
     </div>
     <div class="stat">
@@ -680,9 +692,15 @@ function renderSummary() {
 
 function renderSiteRow(s) {
   const st = s.enabled ? s.state.status : 'paused';
-  const bars = Array.from({ length: 40 }, (_, i) => { const v = s.recent[s.recent.length - 40 + i]; return `<i class="${v === undefined ? 'e' : v ? '' : 'f'}"></i>`; }).join('');
-  const detail = st === 'down' ? `<span class="err">${esc(s.state.lastError)} · down ${dur(Date.now() - s.state.lastChange)}</span>`
-    : s.state.failures ? `<span class="err">check failing (${s.state.failures}), confirming…</span>`
+  const bars = Array.from({ length: 40 }, (_, i) => {
+    const v = s.recent[s.recent.length - 40 + i];
+    const cls = v === undefined ? 'e' : v === 1 ? '' : v === 2 ? 'crit' : 'f';
+    const tip = v === undefined ? 'No check' : v === 1 ? 'Up' : v === 2 ? 'Critical error' : 'Down';
+    return `<i class="${cls}" title="${tip}"></i>`;
+  }).join('');
+  const detail = st === 'down' ? `<span class="err">${esc(s.state.lastError || 'Server unreachable')} · down ${dur(Date.now() - s.state.lastChange)}</span>`
+    : st === 'error' ? `<span class="err" style="color:var(--warn)">${esc(s.state.lastError || 'Critical error')} · error for ${dur(Date.now() - s.state.lastChange)}</span>`
+    : s.state.failures ? `<span class="err" style="color:var(--warn)">check failing (${s.state.failures}), confirming…</span>`
     : `<small>${esc(s.url)}</small>`;
   const ssl = s.state.sslDaysLeft != null ? `<span class="pill" title="SSL certificate">${I.lock} SSL ${s.state.sslDaysLeft}d</span>` : '';
   const starIcon = s.favorite ? I.starFilled : I.starOutline;
@@ -696,7 +714,7 @@ function renderSiteRow(s) {
     </div>
     <div>${pct(s.uptime24h)}</div><div>${pct(s.uptime30d)}</div>
     <div>${s.state.lastMs != null ? s.state.lastMs + ' ms' : '–'}<small class="muted" style="display:block">${ago(s.state.lastCheck)}</small></div>
-    <div class="bars" title="Last 40 checks (newest on right)">${bars}</div>
+    <div class="bars" title="Last 40 checks (green = up, orange = critical error, red = down)">${bars}</div>
     <div class="actions">
       <button class="icon-btn" data-act="check" data-id="${s.id}" data-tip="Check now" aria-label="Check now">${I.refresh}</button>
       <button class="icon-btn" data-act="toggle" data-id="${s.id}" data-tip="${s.enabled ? 'Pause monitoring' : 'Resume monitoring'}" aria-label="${s.enabled ? 'Pause monitoring' : 'Resume monitoring'}">${s.enabled ? I.pause : I.play}</button>
@@ -706,7 +724,7 @@ function renderSiteRow(s) {
 }
 
 function renderSites() {
-  const order = { down: 0, unknown: 1, up: 2 };
+  const order = { down: 0, error: 1, unknown: 2, up: 3 };
   const favSites = sites.filter((s) => s.favorite);
   const favCard = $('#favCard');
   const favCount = $('#favCount');
@@ -734,7 +752,7 @@ function renderSites() {
     return;
   }
 
-  // Sorted list: prioritize favorites on top, then down status, then enabled, then alphabetical
+  // Sorted list: prioritize favorites on top, then down/error status, then enabled, then alphabetical
   const sorted = [...sites].sort((a, b) => (!b.favorite - !a.favorite) || (!a.enabled - !b.enabled) || (order[a.state.status] - order[b.state.status]) || a.name.localeCompare(b.name));
   $('#sites').innerHTML = tableHeader + sorted.map(renderSiteRow).join('');
 }
@@ -761,7 +779,7 @@ async function renderNotif() {
 async function renderLogs() {
   const [inc, al] = await Promise.all([api('/api/incidents'), api('/api/alerts')]);
   $('#incidents').innerHTML = inc.length ? `<table><tr><th>Site</th><th>Started</th><th>Duration</th></tr>${inc.slice(0, 10).map((i) =>
-    `<tr><td>${esc(i.siteName)}<div class="err">${esc(i.error)}</div></td><td>${when(i.startedAt)}</td><td>${i.endedAt ? dur(i.endedAt - i.startedAt) : '<b style="color:var(--down)">ongoing</b>'}</td></tr>`).join('')}</table>`
+    `<tr><td>${esc(i.siteName)}<div class="err" style="${i.type === 'error' ? 'color:var(--warn)' : ''}">${esc(i.error)}</div></td><td>${when(i.startedAt)}</td><td>${i.endedAt ? dur(i.endedAt - i.startedAt) : `<b style="color:${i.type === 'error' ? 'var(--warn)' : 'var(--down)'}">ongoing</b>`}</td></tr>`).join('')}</table>`
     : `<div class="empty">${I.shieldCheck} <span>No incidents recorded. All systems operational.</span></div>`;
   $('#alerts').innerHTML = al.length ? `<table><tr><th>Time</th><th>Event</th><th>Site</th><th>Email</th><th>WhatsApp</th></tr>${al.slice(0, 15).map((a) =>
     `<tr><td>${when(a.ts)}</td><td>${esc(a.kind)}</td><td>${esc(a.siteName)}</td><td>${esc(a.email)}</td><td>${esc(a.whatsapp)}</td></tr>`).join('')}</table>`
