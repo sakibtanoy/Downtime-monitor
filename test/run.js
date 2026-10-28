@@ -59,6 +59,16 @@ function fakeSmtp() {
     if (mode === 'down') { req.socket.destroy(); return; }
     if (req.url === '/redirect') { res.writeHead(302, { Location: '/' }); return res.end(); }
     if (req.url === '/500') { res.writeHead(500); return res.end('boom'); }
+    if (req.url === '/blank') { res.writeHead(200); return res.end(''); }
+    if (req.url === '/whitespace') { res.writeHead(200); return res.end('   \n\t  \n'); }
+    if (req.url === '/empty-skeleton') { res.writeHead(200); return res.end('<!DOCTYPE html><html><head><title></title></head><body></body></html>'); }
+    if (req.url === '/wp-critical') {
+      res.writeHead(200);
+      return res.end('<body id="error-page"><div class="wp-die-message"><p>There has been a critical error on this website.</p></div></body>');
+    }
+    if (req.url === '/wp-db-error') { res.writeHead(200); return res.end('<h1>Error establishing a database connection</h1>'); }
+    if (req.url === '/php-fatal') { res.writeHead(200); return res.end('<b>Fatal error</b>: Uncaught Error: Call to undefined function wp() in /var/www/index.php:12'); }
+    if (req.url === '/wp-maintenance') { res.writeHead(200); return res.end('Briefly unavailable for scheduled maintenance. Check back in a minute.'); }
     res.writeHead(200); res.end('<html>Welcome to my shop</html>');
   });
   await new Promise((r) => target.listen(0, '127.0.0.1', r));
@@ -121,6 +131,28 @@ function fakeSmtp() {
   assert.ok(!refused.ok && /refused/i.test(refused.error)); ok('connection refused = readable error');
   assert.ok((await runCheck({ type: 'tcp', url: `127.0.0.1:${target.address().port}` }, d)).ok); ok('TCP port check up');
   assert.ok(!(await runCheck({ type: 'tcp', url: '127.0.0.1:1' }, d)).ok); ok('TCP port check down');
+
+  // --- blank page & critical error checks
+  const blankCheck = await runCheck({ type: 'http', url: base + '/blank' }, d);
+  assert.ok(!blankCheck.ok && /Blank page/i.test(blankCheck.error)); ok('blank page (0 bytes) detected');
+  const blankIgnored = await runCheck({ type: 'http', url: base + '/blank', checkBlank: false }, d);
+  assert.ok(blankIgnored.ok); ok('blank page check can be disabled');
+  const wsCheck = await runCheck({ type: 'http', url: base + '/whitespace' }, d);
+  assert.ok(!wsCheck.ok && /whitespace only/i.test(wsCheck.error)); ok('whitespace-only page detected');
+  const skelCheck = await runCheck({ type: 'http', url: base + '/empty-skeleton' }, d);
+  assert.ok(!skelCheck.ok && /Blank page/i.test(skelCheck.error)); ok('empty HTML skeleton (WSOD) detected');
+
+  const wpCrit = await runCheck({ type: 'http', url: base + '/wp-critical' }, d);
+  assert.ok(!wpCrit.ok && /WordPress critical error/i.test(wpCrit.error)); ok('WordPress critical error detected');
+  const wpCritIgnored = await runCheck({ type: 'http', url: base + '/wp-critical', checkErrors: false }, d);
+  assert.ok(wpCritIgnored.ok); ok('critical error check can be disabled');
+
+  const dbErr = await runCheck({ type: 'http', url: base + '/wp-db-error' }, d);
+  assert.ok(!dbErr.ok && /Database connection error/i.test(dbErr.error)); ok('WordPress database connection error detected');
+  const phpErr = await runCheck({ type: 'http', url: base + '/php-fatal' }, d);
+  assert.ok(!phpErr.ok && /PHP Fatal error/i.test(phpErr.error)); ok('PHP Fatal error detected');
+  const maintErr = await runCheck({ type: 'http', url: base + '/wp-maintenance' }, d);
+  assert.ok(!maintErr.ok && /WordPress maintenance mode/i.test(maintErr.error)); ok('WordPress maintenance mode detected');
 
   // --- bulk, test endpoints, reports
   const bulk = await call('POST', '/api/sites/bulk', { text: `A | ${base}/a\n${base}/\nbad line ::` });

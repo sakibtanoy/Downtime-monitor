@@ -100,6 +100,8 @@ function cleanSite(body) {
     expectedStatus, keyword: String(body.keyword || '').trim().slice(0, 200),
     intervalMinutes: int, timeoutMs: to,
     ignoreTls: !!body.ignoreTls,
+    checkBlank: body.checkBlank !== false,
+    checkErrors: body.checkErrors !== false,
     enabled: body.enabled !== false,
     favorite: !!body.favorite,
   };

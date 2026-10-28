@@ -6,8 +6,10 @@ server - just Node.js and a few JSON files in `data/`.
 
 ## Features
 - HTTP/HTTPS checks (redirects, expected status, "page must contain text") and TCP port checks
+- **WordPress & PHP Crash Detection**: automatically flags White Screen of Death (0-byte / whitespace / empty skeleton blank pages), WordPress critical errors ("There has been a critical error on this website"), database connection failures, PHP fatal/parse errors, and stuck maintenance mode - even if the server returns HTTP 200
 - **False-alarm protection**: a site is only "down" after `FAILURE_THRESHOLD` failed checks; a failed
   check is re-tried after 30 s instead of waiting a full interval
+- **Favorites / Starred Section**: pin priority websites to a dedicated top section with quick toggle
 - DOWN, RECOVERED (with downtime length), still-down reminders, and SSL-expiring alerts
 - Email via SMTP (local Postfix or any provider) and WhatsApp via a built-in linked-device client
 - Dashboard: add / bulk-add / edit / pause sites, uptime %, response times, incidents, alert log, test buttons

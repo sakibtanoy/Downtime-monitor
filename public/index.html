@@ -561,6 +561,8 @@
       <label>Expected status (e.g. 200 or 200-299) <input name="expectedStatus" placeholder="any 2xx/3xx"></label>
       <label>Page must contain text <input name="keyword" placeholder="optional"></label>
     </div>
+    <label class="chk"><input type="checkbox" name="checkBlank" checked> Alert on blank page (White Screen of Death / 0 bytes)</label>
+    <label class="chk"><input type="checkbox" name="checkErrors" checked> Alert on WordPress / PHP critical errors (fatal error, DB crash)</label>
     <label class="chk"><input type="checkbox" name="ignoreTls"> Ignore SSL certificate errors</label>
     <label class="chk"><input type="checkbox" name="favorite"> Add to Favorite websites (show at top)</label>
     <div id="formErr" class="err"></div>
@@ -874,10 +876,10 @@ function openSite(s) {
   const f = $('#siteForm'); f.reset(); $('#formErr').textContent = '';
   $('#siteTitle').innerHTML = s ? `${I.edit} Edit website` : `${I.plus} Add website`;
   if (s) for (const k of ['type', 'url', 'name', 'intervalMinutes', 'timeoutMs', 'expectedStatus', 'keyword']) f.elements[k].value = s[k] ?? '';
-  if (s) {
-    f.elements.ignoreTls.checked = !!s.ignoreTls;
-    f.elements.favorite.checked = !!s.favorite;
-  }
+  f.elements.ignoreTls.checked = s ? !!s.ignoreTls : false;
+  f.elements.favorite.checked = s ? !!s.favorite : false;
+  f.elements.checkBlank.checked = s ? s.checkBlank !== false : true;
+  f.elements.checkErrors.checked = s ? s.checkErrors !== false : true;
   $('#siteDlg').showModal();
 }
 $('#addBtn').onclick = () => openSite(null);
@@ -897,6 +899,8 @@ $('#siteForm').addEventListener('submit', async (e) => {
     keyword: f.keyword.value,
     ignoreTls: f.ignoreTls.checked,
     favorite: f.favorite.checked,
+    checkBlank: f.checkBlank.checked,
+    checkErrors: f.checkErrors.checked,
   };
   try {
     await api(editingId ? `/api/sites/${editingId}` : '/api/sites', { method: editingId ? 'PUT' : 'POST', body });
